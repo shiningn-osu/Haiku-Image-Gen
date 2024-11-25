@@ -1,57 +1,63 @@
 from openai import OpenAI
-from pathlib import Path
+from flask import Flask, request, jsonify
+import os
+from dotenv import load_dotenv
 import time
 
-client = OpenAI(api_key="")
+app = Flask(__name__)
 
-def ParseLines(Lines):          #place array of file lines into 1 string
-  output = ""
-  for x in range(len(Lines)):
-    output += Lines[x] + " "
-  return output
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
 
-def main():
-  prompt = ""
+client = OpenAI(api_key=api_key)
 
-  while(True):
 
-    p = Path(__file__).with_name('signal.txt') #test if signal is active
-    with p.open('r') as file:
-      Lines = file.readlines()
-      if(Lines == ["run"]):
-        print("signal found, running")
+@app.route('/generate-image', methods=['POST'])
+def generate_image():
+    try:
+        data = request.json
 
-        p = Path(__file__).with_name('input.txt') #take haiku
-        with p.open('r') as file:
-          Lines = file.readlines()
-          prompt = ParseLines(Lines)
+        if not data or 'prompt' not in data:
+            return jsonify({
+                'error': 'No prompt provided',
+                'status': 'failed'
+            }), 400
 
-        p = Path(__file__).with_name('signal.txt') #clear signal
-        with p.open('w') as file:
-          Lines = file.writelines("")
-          print("SIGNAL CLEARED, PROMPT IS "  + prompt)
-          print("OPENAI API PROMPTED, WAITING FOR RESPONSE...")
-          response = client.images.generate(
+        prompt = data['prompt']
+
+        # Send prompt to OpenAI API
+        res = generate_image_helper(prompt)
+        return res
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'failed'
+        }), 500
+
+
+def generate_image_helper(prompt):
+    try:
+        res = client.images.generate(
             model="dall-e-3",
-            prompt=prompt,                      #input haiku
+            prompt=prompt,
             size="1024x1024",
             quality="standard",
             n=1,
-          )
-          print("RESPONSE RECIEVED, PRINTING URL:")
-          image_url = response.data[0].url
-          print(image_url)
+        )
+        image_url = res.data[0].url
 
-          p = Path(__file__).with_name('output.txt')
-          with p.open('w') as file:
-            Lines = file.writelines(image_url)
-          print("Output URL written to output.txt")
-          print("Testing for new signal...")
-      else:                                     #no signal found, waiting...
+        return jsonify({
+            'image_url': image_url,
+            'status': 'success'
+        })
 
-        print("no signal found")
-        time.sleep(3) #wait 3 seconds before testing again
+    except Exception as openai_error:
+        return jsonify({
+            'error': str(openai_error),
+            'status': 'failed'
+        }), 500
 
 
-main()
-
+if __name__ == '__main__':
+    app.run(debug=True, port=5004)
